@@ -34,12 +34,15 @@ def create_database() -> None:
     import pymysql
 
     try:
+        # บังคับเปิด SSL ถ้าพบว่าเป็นโฮสต์ของ Aiven
+        ssl_args = {"ssl": {}} if "aivencloud.com" in MYSQL_HOST else {}
         conn = pymysql.connect(
             host=MYSQL_HOST,
             port=MYSQL_PORT,
             user=MYSQL_USER,
             password=MYSQL_PASSWORD,
             charset="utf8mb4",
+            **ssl_args
         )
     except pymysql.MySQLError as exc:
         sys.exit(
