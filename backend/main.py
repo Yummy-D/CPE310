@@ -15,6 +15,12 @@ MULTI-MODEL (Phase 6):
         "yolov8"      (default) - robust YOLOv8n-cls checkpoint (best.pt)
         "mobilenetv3"           - lightweight MobileNetV3 (mock until trained)
 
+PRODUCTION CONFIGURATION:
+    All settings come from environment variables / a project-root `.env`
+    (see .env.example): MySQL credentials, SECRET_KEY, CORS_ORIGINS, HOST,
+    PORT, ENVIRONMENT.  With ENVIRONMENT=production the app disables auto-
+    reload, hides /docs, and refuses to boot with an insecure JWT secret.
+
 PRIVACY-FIRST CONTRACT:
     Uploaded images are written to a temporary file, used for inference,
     and DELETED in a `finally` block via os.remove() so they never survive
@@ -35,6 +41,7 @@ from sqlalchemy.orm import Session
 
 from ai_mock import analyze_stool_image  # noqa: F401  (replaced below by Phase 3)
 from auth import create_access_token, get_current_user, hash_password, verify_password
+from config import IS_PRODUCTION, env, env_bool
 from database import Base, engine, get_db
 from evaluation import load_evaluation
 from inference import MODEL_CHOICES, analyze_stool_image  # Phase 3/6: YOLOv8 + MobileNetV3 (mock fallbacks)
@@ -59,18 +66,45 @@ async def lifespan(_: FastAPI):
     yield
 
 
+def _cors_origins() -> list[str]:
+    """Allowed browser origins, from CORS_ORIGINS (comma-separated).
+
+    - development: defaults to ["*"] so the static frontend works out of the box.
+    - production: an explicit list is REQUIRED; leaving it empty blocks all
+      cross-origin browser requests (a same-origin deployment is unaffected).
+    """
+    origins = [o.strip() for o in (env("CORS_ORIGINS") or "").split(",") if o.strip()]
+    if origins:
+        return origins
+    if IS_PRODUCTION:
+        print(
+            "[CORS] WARNING: CORS_ORIGINS is empty in production - cross-origin "
+            "browser requests will be blocked. Set it to your frontend origin(s)."
+        )
+        return []
+    return ["*"]
+
+
+# API docs are hidden in production unless ENABLE_DOCS=true (smaller attack
+# surface); they stay available during development.
+_ENABLE_DOCS = env_bool("ENABLE_DOCS", not IS_PRODUCTION)
+
 app = FastAPI(
     title="StoolCheck AI API",
     description="Bristol Stool Scale analysis with privacy-first image handling.",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/docs" if _ENABLE_DOCS else None,
+    redoc_url="/redoc" if _ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if _ENABLE_DOCS else None,
 )
 
-# Allow the static frontend (Phase 2) to call this API during development.
+# Browser access for the frontend. Auth uses Bearer tokens (not cookies), so
+# credentialed requests are not needed; the allowed origins come from CORS_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -304,3 +338,18 @@ class SafeStaticFiles(StaticFiles):
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 if FRONTEND_DIR.is_dir():
     app.mount("/", SafeStaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
+
+# --- Dev convenience: `python main.py` ---------------------------------------
+# Production should serve the app with gunicorn (see Procfile / start.sh):
+#     gunicorn -w 2 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000 main:app
+# Auto-reload is ALWAYS disabled when ENVIRONMENT=production.
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=env("HOST", "0.0.0.0" if IS_PRODUCTION else "127.0.0.1"),
+        port=int(env("PORT", "8000") or 8000),
+        reload=(not IS_PRODUCTION) and env_bool("RELOAD", True),
+    )

@@ -1,0 +1,28 @@
+# --- Secrets / local environment: NEVER commit ---
+.env
+.env.*
+!.env.example
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- Logs ---
+*.log
+
+# --- Ultralytics training artefacts (regenerate via train_yolo.py) ---
+backend/runs/
+runs/
+*.cache
+
+# --- Legacy SQLite development database (production uses MySQL) ---
+backend/stoolcheck.db
+
+# --- OS / editor noise ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+

@@ -1,30 +1,37 @@
-"""SQLAlchemy setup — Phase 4: MySQL via XAMPP.
+"""SQLAlchemy setup — MySQL via environment configuration (production-ready).
 
-Default connection (XAMPP defaults): user 'root', no password, port 3306,
-database 'stoolcheck_db'.  Override with the STOOLCHECK_DATABASE_URL
-environment variable, e.g. to run tests against SQLite:
+Connection settings come from environment variables (see backend/config.py and
+the project-root `.env.example`):
 
-    set STOOLCHECK_DATABASE_URL=sqlite:///./stoolcheck_dev.db
+    MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD, MYSQL_DATABASE
+
+Development defaults below match XAMPP: user 'root', no password, port 3306,
+database 'stoolcheck_db'.  A full URL can still be forced with:
+
+    STOOLCHECK_DATABASE_URL=sqlite:///./stoolcheck_dev.db
 """
 
-import os
+from urllib.parse import quote_plus
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-MYSQL_HOST = "127.0.0.1"
-MYSQL_PORT = 3306
-MYSQL_USER = "root"
-MYSQL_PASSWORD = ""  # XAMPP default: no password
-MYSQL_DB = "stoolcheck_db"
+from config import env  # importing config loads <project-root>/.env via dotenv
 
+MYSQL_HOST = env("MYSQL_HOST", "127.0.0.1")
+MYSQL_PORT = int(env("MYSQL_PORT", "3306") or 3306)
+MYSQL_USER = env("MYSQL_USER", "root")
+MYSQL_PASSWORD = env("MYSQL_PASSWORD", "") or ""  # XAMPP default: no password
+MYSQL_DB = env("MYSQL_DATABASE", "stoolcheck_db")
+
+# quote_plus: production passwords often contain @ : / + characters that would
+# otherwise break the SQLAlchemy URL.
 DEFAULT_MYSQL_URL = (
-    f"mysql+pymysql://{MYSQL_USER}@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
+    f"mysql+pymysql://{quote_plus(MYSQL_USER)}:{quote_plus(MYSQL_PASSWORD)}"
+    f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
 )
 
-SQLALCHEMY_DATABASE_URL = os.environ.get(
-    "STOOLCHECK_DATABASE_URL", DEFAULT_MYSQL_URL
-)
+SQLALCHEMY_DATABASE_URL = env("STOOLCHECK_DATABASE_URL", DEFAULT_MYSQL_URL)
 
 _IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 

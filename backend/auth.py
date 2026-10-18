@@ -1,11 +1,13 @@
-"""JWT authentication for StoolCheck AI (Phase 5).
+"""JWT authentication for StoolCheck AI.
 
 - Passwords: bcrypt via passlib (bcrypt pinned <4.1 for passlib 1.7.4 compat).
-- Tokens: PyJWT HS256, 12h expiry; claims: sub=email (login id), uid=user id.
-- Production note: set the STOOLCHECK_SECRET_KEY environment variable!
+- Tokens: PyJWT HS256, default 12h expiry; claims: sub=email (login id), uid.
+- Secrets: read SECRET_KEY (legacy alias: STOOLCHECK_SECRET_KEY) from the
+  environment / .env — see .env.example.  When ENVIRONMENT=production the app
+  REFUSES to start with a missing or default secret (a guessable secret would
+  let anyone forge tokens).
 """
 
-import os
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -14,14 +16,23 @@ from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
+from config import IS_PRODUCTION, env
 from database import get_db
 from models import User
 
-SECRET_KEY = os.environ.get(
-    "STOOLCHECK_SECRET_KEY", "dev-only-change-me-stoolcheck-ai"
-)
+_DEV_SECRET = "dev-only-change-me-stoolcheck-ai"
+
+SECRET_KEY = env("SECRET_KEY") or env("STOOLCHECK_SECRET_KEY") or _DEV_SECRET
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 12 * 60  # 12 hours (dev convenience)
+ACCESS_TOKEN_EXPIRE_MINUTES = int(env("JWT_EXPIRE_MINUTES", str(12 * 60)) or 720)
+
+if IS_PRODUCTION and (SECRET_KEY == _DEV_SECRET or len(SECRET_KEY) < 32):
+    raise SystemExit(
+        "[FATAL] SECRET_KEY is missing or still the development default while "
+        "ENVIRONMENT=production.\n"
+        "        Set a strong random secret, e.g.:\n"
+        "          python -c \"import secrets; print(secrets.token_urlsafe(64))\""
+    )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 

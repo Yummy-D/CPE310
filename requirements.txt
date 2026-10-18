@@ -1,11 +1,21 @@
 fastapi
-uvicorn[standard]
+uvicorn[standard]   # dev server + the UvicornWorker used by gunicorn in production
+gunicorn            # production app server (Linux/macOS - on Windows use uvicorn)
 python-multipart
 sqlalchemy
+python-dotenv       # loads the project-root .env (see .env.example)
 
 # --- AI (Phase 3 / Phase 6 multi-model) ---
-ultralytics   # YOLOv8n-cls training + inference (pulls PyTorch)
-torchvision   # MobileNetV3-Small backbone + preprocessing (multi-model feature)
+# CPU-ONLY PyTorch wheels: ~10x smaller than the CUDA builds (124MB vs ~2.5GB)
+# and no GPU runtime is needed on the production server. The `+cpu` local
+# version pins force the CPU wheel from the official PyTorch index; verified
+# resolvable for torch 2.14.1 / torchvision 0.29.1.
+# NOTE: gunicorn needs Linux/macOS (or WSL); on Windows dev boxes run the app
+# with `python -m uvicorn main:app --reload` instead.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
+torchvision==0.29.1+cpu
+ultralytics   # YOLOv8n-cls training + inference
 
 # --- Database (Phase 4) ---
 pymysql       # MySQL driver for XAMPP (root, no password, port 3306)
