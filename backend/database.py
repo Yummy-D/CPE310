@@ -16,7 +16,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-from config import env  # importing config loads <project-root>/.env via dotenv
+from config import IS_PRODUCTION, env  # importing config loads <project-root>/.env via dotenv
 
 MYSQL_HOST = env("MYSQL_HOST", "127.0.0.1")
 MYSQL_PORT = int(env("MYSQL_PORT", "3306") or 3306)
@@ -35,12 +35,24 @@ SQLALCHEMY_DATABASE_URL = env("STOOLCHECK_DATABASE_URL", DEFAULT_MYSQL_URL)
 
 _IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 
+# Connection arguments per database/environment:
+#   - SQLite: allow FastAPI's worker threads to share connections.
+#   - MySQL in production (e.g. Aiven cloud): REQUIRES an SSL/TLS connection,
+#     so pass {"ssl": {}} to pymysql or the server rejects the handshake.
+#   - Local MySQL (development): no extra arguments.
+if _IS_SQLITE:
+    _CONNECT_ARGS = {"check_same_thread": False}
+elif IS_PRODUCTION:  # MySQL + ENVIRONMENT=production (Aiven requires SSL)
+    _CONNECT_ARGS = {"ssl": {}}
+else:
+    _CONNECT_ARGS = {}
+
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    # check_same_thread is SQLite-only; MySQL must not receive it.
-    connect_args={"check_same_thread": False} if _IS_SQLITE else {},
-    pool_pre_ping=True,   # transparently reconnect after XAMPP restarts
-    pool_recycle=3600,
+    connect_args=_CONNECT_ARGS,
+    pool_pre_ping=True,    # transparently reconnect after dropped cloud links
+    pool_recycle=300,      # recycle idle links every 5 min; cloud DBs (Aiven)
+                           # terminate idle connections much faster than 1h
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
