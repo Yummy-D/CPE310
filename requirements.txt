@@ -1,0 +1,20 @@
+fastapi
+uvicorn[standard]
+python-multipart
+sqlalchemy
+
+# --- AI (Phase 3 / Phase 6 multi-model) ---
+ultralytics   # YOLOv8n-cls training + inference (pulls PyTorch)
+torchvision   # MobileNetV3-Small backbone + preprocessing (multi-model feature)
+
+# --- Database (Phase 4) ---
+pymysql       # MySQL driver for XAMPP (root, no password, port 3306)
+
+# --- Auth (Phase 5) ---
+passlib         # password hashing (bcrypt backend)
+bcrypt==4.0.1   # pinned: passlib 1.7.4 is incompatible with bcrypt>=4.1
+pyjwt           # JWT encode/decode (HS256)
+email-validator # enables pydantic EmailStr (email-based login)
+
+# --- dev / testing ---
+httpx        # required by FastAPI's TestClient (Phase 1 validation tests)

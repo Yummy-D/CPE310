@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="StoolCheck AI — private Bristol Stool Scale (Type 1–7) image analysis powered by YOLOv8 and MobileNetV3." />
+  <title>StoolCheck AI — Bristol Stool Scale Analyzer</title>
+  <!-- TailwindCSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #dropZone.drag-over { border-color: #10b981; background: rgba(16, 185, 129, .08); transform: translateY(-2px); }
+    code { font-family: ui-monospace, Consolas, monospace; }
+    .brand-gradient { background: linear-gradient(120deg, #059669 0%, #10b981 45%, #0ea5e9 100%); }
+    /* Indeterminate bar inside the processing overlay */
+    .progress-indeterminate { width: 40%; animation: progress-slide 1.4s ease-in-out infinite; }
+    @keyframes progress-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+    .spinner-ring { animation: spin .9s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
+
+  <!-- ===== Header ===== -->
+  <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+      <div class="flex items-center gap-3">
+        <div class="brand-gradient grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl font-extrabold text-white shadow-sm">S</div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight text-slate-900">StoolCheck AI</h1>
+          <p class="text-xs text-slate-500">Bristol Stool Scale analysis (Type 1–7)</p>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 sm:gap-3">
+        <span class="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 md:inline-flex">
+          🔒 Images deleted immediately after analysis
+        </span>
+        <span class="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700">
+          🤖 Multi-model · YOLOv8 + MobileNetV3
+        </span>
+        <div id="userBar" class="hidden items-center gap-2">
+          <span id="userBarName" class="text-sm font-medium text-slate-700"></span>
+          <button id="logoutBtn" type="button"
+                  class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+            Log out
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+  <!-- ===== Auth gate: shown until the user logs in ===== -->
+  <section id="authSection" class="mx-auto max-w-md px-4 py-10 sm:py-14">
+    <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <div class="mb-6 text-center">
+        <div class="brand-gradient mx-auto grid h-12 w-12 place-items-center rounded-xl text-xl font-extrabold text-white">S</div>
+        <h2 class="mt-3 text-lg font-bold text-slate-900">StoolCheck AI</h2>
+        <p class="text-sm text-slate-500">Private Bristol Stool Scale tracking</p>
+      </div>
+
+      <div class="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+        <button id="tabLogin" type="button"
+                class="rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow">Log in</button>
+        <button id="tabRegister" type="button"
+                class="rounded-md py-2 text-sm font-medium text-slate-500">Register</button>
+      </div>
+
+      <form id="authForm">
+        <label for="authEmail" class="mb-1 block text-sm font-medium text-slate-700">Email</label>
+        <input id="authEmail" type="email" autocomplete="email" maxlength="255"
+               placeholder="you@example.com"
+               class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+
+        <div id="usernameField" class="hidden">
+          <label for="authUsername" class="mb-1 block text-sm font-medium text-slate-700">Display username</label>
+          <input id="authUsername" type="text" autocomplete="username" maxlength="32"
+                 placeholder="e.g. sam123"
+                 class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+
+        <label for="authPassword" class="mb-1 block text-sm font-medium text-slate-700">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password" maxlength="128"
+               placeholder="••••••••"
+               class="mb-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <p id="authHint" class="mb-4 text-xs text-slate-400"></p>
+
+        <div id="authError" class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+        <button id="authSubmit" type="submit"
+                class="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <span id="authSubmitLabel">Log in</span>
+          <span id="authSpinner" class="hidden h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+        </button>
+      </form>
+    </div>
+  </section>
+  <!-- ===== App content (hidden until logged in) ===== -->
+  <div id="appContent" class="hidden">
+    <main class="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-2 lg:gap-8 lg:px-8 lg:py-10">
+
+      <!-- ===== Left column: upload + result ===== -->
+      <section class="space-y-6">
+
+        <!-- Upload card -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div class="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <h2 class="font-semibold text-slate-900">1 · Upload stool image</h2>
+              <p class="mt-1 text-sm text-slate-500">
+                JPG, PNG, WEBP, BMP or GIF — max 10&nbsp;MB. Processed in memory and permanently deleted right away.
+              </p>
+            </div>
+            <span class="hidden shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 sm:inline-block">Private</span>
+          </div>
+
+          <div id="dropZone"
+               class="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 p-6 text-center transition hover:border-emerald-400 hover:bg-emerald-50/40 sm:p-8">
+            <img id="preview" alt="Selected preview" class="hidden max-h-44 rounded-lg object-contain shadow-sm" />
+            <div id="dropHint">
+              <div class="text-3xl">📸</div>
+              <p class="mt-1 text-sm font-medium text-slate-700">Click or drag &amp; drop an image</p>
+              <p id="fileMeta" class="mt-0.5 text-xs text-slate-400">No file selected</p>
+            </div>
+            <input id="fileInput" type="file"
+                   accept="image/jpeg,image/png,image/webp,image/bmp,image/gif"
+                   class="absolute inset-0 cursor-pointer opacity-0" aria-label="Choose stool image" />
+          </div>
+
+          <div id="uploadError"
+               class="mt-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+          <!-- Multi-model selection -->
+          <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <label for="modelSelect" class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">AI model</label>
+            <div class="relative">
+              <select id="modelSelect"
+                      class="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-9 text-sm font-medium text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                <option value="yolov8">YOLOv8 (Robust)</option>
+                <option value="mobilenetv3">MobileNetV3 (Lightweight)</option>
+              </select>
+              <svg class="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+            <p id="modelHint" class="mt-1.5 text-xs text-slate-400">Best accuracy — YOLOv8n-cls checkpoint (best.pt).</p>
+          </div>
+
+          <button id="analyzeBtn" disabled
+                  class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+            <span id="analyzeLabel">Analyze image</span>
+            <span id="analyzeSpinner"
+                  class="hidden h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+          </button>
+        </div>
+        <!-- Result card (hidden until analysis completes) -->
+        <div id="resultCard" class="hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Classification result</p>
+              <h3 id="resultLabel" class="mt-1 text-lg font-bold text-slate-900">—</h3>
+            </div>
+            <div id="resultBadge"
+                 class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl font-bold text-white">?</div>
+          </div>
+
+          <p id="resultDesc" class="mt-3 text-sm text-slate-600"></p>
+
+          <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span id="resultConfidence" class="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600"></span>
+            <span id="resultModel" class="rounded-full bg-sky-50 px-2.5 py-1 font-medium text-sky-700"></span>
+            <span class="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">✓ Image deleted</span>
+          </div>
+
+          <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-800">🥗 Dietary recommendations</p>
+            <p id="resultAdvice" class="text-sm leading-relaxed text-amber-900"></p>
+          </div>
+
+          <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Bristol scale</p>
+          <div id="scaleStrip" class="mt-2 grid grid-cols-7 gap-1 text-center"></div>
+
+          <p id="resultSaved" class="mt-4 text-xs text-slate-400"></p>
+        </div>
+      </section>
+
+      <!-- ===== Processing overlay (loading spinner) ===== -->
+      <div id="loadingOverlay" class="fixed inset-0 z-50 hidden">
+        <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"></div>
+        <div class="relative flex h-full items-center justify-center p-4">
+          <div class="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl" role="status" aria-live="polite">
+            <div class="relative mx-auto h-14 w-14">
+              <div class="spinner-ring absolute inset-0 rounded-full border-4 border-emerald-200 border-t-emerald-600"></div>
+              <div class="absolute inset-0 grid place-items-center text-lg">🔬</div>
+            </div>
+            <p class="mt-4 text-base font-semibold text-slate-900">Analyzing your image…</p>
+            <p id="loadingModelText" class="mt-1 text-sm text-slate-500">Model: YOLOv8 (Robust)</p>
+            <div class="mt-4 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+              <div class="progress-indeterminate h-full rounded-full bg-emerald-500"></div>
+            </div>
+            <p class="mt-3 text-xs text-slate-400">Your image is deleted right after inference — nothing is stored.</p>
+          </div>
+        </div>
+      </div>
+      <!-- ===== Dashboard column ===== -->
+      <section>
+        <div class="h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="font-semibold text-slate-900">2 · History dashboard</h2>
+            <button id="refreshBtn" type="button"
+                    class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-emerald-600 transition hover:bg-emerald-50 hover:text-emerald-700">↻ Refresh</button>
+          </div>
+          <p class="mb-4 text-sm text-slate-500">
+            Bristol type over time — from <code class="rounded bg-slate-100 px-1 text-xs">GET /history</code>
+          </p>
+
+          <div id="chartError"
+               class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+          <div id="chartEmpty" class="hidden py-16 text-center text-sm text-slate-400">
+            No analyses yet — upload an image to get started.
+          </div>
+          <div id="chartWrap" class="relative h-72">
+            <canvas id="historyChart" aria-label="Bristol type history line chart" role="img"></canvas>
+          </div>
+        </div>
+      </section>
+      <!-- ===== Model Evaluation ===== -->
+      <section class="lg:col-span-2">
+        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+            <h2 class="font-semibold text-slate-900">3 · Model Evaluation</h2>
+            <span id="evalBadge"
+                  class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">checking…</span>
+          </div>
+          <p class="mb-4 text-sm text-slate-500">
+            YOLOv8n-cls training metrics from the latest run —
+            <code class="rounded bg-slate-100 px-1 text-xs">GET /evaluation</code>
+          </p>
+
+          <div id="evalError"
+               class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+          <div id="evalEmpty"
+               class="hidden rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-400">
+            No training run found — train first with
+            <code class="rounded bg-slate-100 px-1">python train_yolo.py</code>.
+          </div>
+
+          <dl id="evalStats" class="hidden grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div class="rounded-xl bg-emerald-50 p-4 text-center">
+              <dt class="text-xs font-medium uppercase tracking-wide text-emerald-700">Top-1 Accuracy</dt>
+              <dd id="evalTop1" class="mt-1 text-2xl font-bold text-emerald-700">—</dd>
+            </div>
+            <div class="rounded-xl bg-sky-50 p-4 text-center">
+              <dt class="text-xs font-medium uppercase tracking-wide text-sky-700">Top-5 Accuracy</dt>
+              <dd id="evalTop5" class="mt-1 text-2xl font-bold text-sky-700">—</dd>
+            </div>
+            <div class="rounded-xl bg-slate-100 p-4 text-center">
+              <dt class="text-xs font-medium uppercase tracking-wide text-slate-600">Epochs</dt>
+              <dd id="evalEpochs" class="mt-1 text-2xl font-bold text-slate-700">—</dd>
+            </div>
+            <div class="rounded-xl bg-amber-50 p-4 text-center">
+              <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Val Loss</dt>
+              <dd id="evalLoss" class="mt-1 text-2xl font-bold text-amber-700">—</dd>
+            </div>
+          </dl>
+
+          <p id="evalMeta" class="mt-3 hidden text-xs text-slate-400"></p>
+
+          <!-- Model comparison bar chart (placeholder benchmark data) -->
+          <div class="mt-6 rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5">
+            <div class="mb-3 flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 class="text-sm font-semibold text-slate-900">YOLOv8 vs MobileNetV3</h3>
+                <p class="text-xs text-slate-500">Top-1 accuracy &amp; average inference time (CPU) — placeholder benchmark numbers.</p>
+              </div>
+              <span class="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">Placeholder</span>
+            </div>
+            <div class="relative h-72 sm:h-80">
+              <canvas id="modelCompareChart" aria-label="YOLOv8 versus MobileNetV3 comparison bar chart" role="img"></canvas>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer class="mx-auto max-w-7xl px-4 pb-10 pt-2 text-center text-xs text-slate-400 sm:px-6 lg:px-8">
+    StoolCheck AI is an educational tool, not a medical device. Always consult a healthcare professional
+    for medical concerns. &nbsp;·&nbsp; No images are ever stored.
+  </footer>
+
+  <script>
+  "use strict";
+
+  // ---- Config ---------------------------------------------------------------
+  // Same-origin when served by FastAPI; explicit origin when opened via file://
+  const API_BASE =
+    location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/gif"];
+  const MAX_BYTES = 10 * 1024 * 1024; // mirror backend limit
+
+  const BRISTOL_COLORS = {
+    1: "#dc2626", 2: "#ea580c", 3: "#65a30d", 4: "#059669",
+    5: "#ca8a04", 6: "#d97706", 7: "#7c3aed",
+  };
+
+  // Short explanations shown under the model dropdown.
+  const MODEL_INFO = {
+    yolov8: "Best accuracy — YOLOv8n-cls checkpoint (best.pt).",
+    mobilenetv3: "Fast & light — MobileNetV3-Small (mock prediction until trained).",
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---- Element refs ----------------------------------------------------------
+  const fileInput = $("fileInput");
+  const dropZone = $("dropZone");
+  const preview = $("preview");
+  const fileMeta = $("fileMeta");
+  const uploadError = $("uploadError");
+  const analyzeBtn = $("analyzeBtn");
+  const analyzeLabel = $("analyzeLabel");
+  const analyzeSpinner = $("analyzeSpinner");
+  const refreshBtn = $("refreshBtn");
+  const modelSelect = $("modelSelect");
+  const loadingOverlay = $("loadingOverlay");
+  const loadingModelText = $("loadingModelText");
+
+  let selectedFile = null;
+  let historyChart = null;
+  let modelCompareChart = null;
+
+  // ---- Helpers ---------------------------------------------------------------
+  function showUploadError(msg) {
+    uploadError.textContent = msg;
+    uploadError.classList.remove("hidden");
+  }
+  function clearUploadError() {
+    uploadError.classList.add("hidden");
+    uploadError.textContent = "";
+  }
+  function showChartError(msg) {
+    $("chartError").textContent = msg;
+    $("chartError").classList.remove("hidden");
+  }
+  function clearChartError() {
+    $("chartError").classList.add("hidden");
+    $("chartError").textContent = "";
+  }
+
+  // ---- Auth: JWT in localStorage, attached to protected fetches --------------
+  const TOKEN_KEY = "stoolcheck_token";
+  const USERNAME_KEY = "stoolcheck_username";
+
+  function getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+  function authHeaders(extra = {}) {
+    const t = getToken();
+    return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
+  }
+  async function apiFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: authHeaders(options.headers || {}),
+    });
+    if (res.status === 401) {
+      logout("Your session has expired. Please log in again.");
+      throw new Error("unauthorized");
+    }
+    return res;
+  }
+
+  // Busy state: button spinner + full-screen processing overlay (loading UX).
+  function setBusy(busy) {
+    analyzeBtn.disabled = busy || !selectedFile;
+    analyzeSpinner.classList.toggle("hidden", !busy);
+    analyzeLabel.textContent = busy ? "Analyzing…" : "Analyze image";
+    loadingOverlay.classList.toggle("hidden", !busy);
+    document.body.style.overflow = busy ? "hidden" : "";
+  }
+
+  // Keep the overlay + hint text in sync with the selected model.
+  function syncModelInfo() {
+    const label = modelSelect.selectedOptions[0].textContent;
+    loadingModelText.textContent = `Model: ${label}`;
+    $("modelHint").textContent = MODEL_INFO[modelSelect.value] || "";
+  }
+  modelSelect.addEventListener("change", syncModelInfo);
+
+  // ---- File selection (click or drag & drop) ---------------------------------
+  function acceptFile(file) {
+    clearUploadError();
+    if (!file) return;
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      showUploadError("Unsupported file type. Use JPG, PNG, WEBP, BMP or GIF.");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      showUploadError("Image exceeds the 10 MB limit.");
+      return;
+    }
+    selectedFile = file;
+    fileMeta.textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB`;
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove("hidden");
+    analyzeBtn.disabled = false;
+  }
+
+  fileInput.addEventListener("change", (e) => acceptFile(e.target.files[0]));
+
+  ["dragenter", "dragover"].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.classList.add("drag-over");
+    })
+  );
+  ["dragleave", "drop"].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("drag-over");
+    })
+  );
+  dropZone.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length) acceptFile(e.dataTransfer.files[0]);
+  });
+
+  // ---- Result rendering -------------------------------------------------------
+  function renderResult(data) {
+    const color = BRISTOL_COLORS[data.bristol_type] || "#059669";
+
+    const badge = $("resultBadge");
+    badge.textContent = data.bristol_type;
+    badge.style.backgroundColor = color;
+
+    $("resultLabel").textContent = data.label;
+    $("resultDesc").textContent = data.description;
+    $("resultConfidence").textContent = `Confidence ${(data.confidence * 100).toFixed(0)}%`;
+    $("resultModel").textContent = `model: ${data.model}`;
+    $("resultAdvice").textContent = data.recommendations;
+    $("resultSaved").textContent =
+      `Saved #${data.id} for "${data.username ?? localStorage.getItem(USERNAME_KEY) ?? "you"}" at ${new Date(data.timestamp).toLocaleString()}`;
+
+    // 7-type scale strip with the detected type highlighted
+    const strip = $("scaleStrip");
+    strip.innerHTML = "";
+    for (let t = 1; t <= 7; t++) {
+      const active = t === data.bristol_type;
+      const cell = document.createElement("div");
+      cell.className =
+        "rounded-md py-2 text-xs font-semibold transition " +
+        (active ? "text-white shadow" : "bg-slate-100 text-slate-400");
+      if (active) cell.style.backgroundColor = BRISTOL_COLORS[t];
+      cell.textContent = t;
+      cell.title = `Type ${t}`;
+      strip.appendChild(cell);
+    }
+
+    $("resultCard").classList.remove("hidden");
+    $("resultCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  // ---- POST /analyze (multi-model: yolo or mobilenetv3) ----------------------
+  async function analyze() {
+    if (!selectedFile) {
+      showUploadError("Please choose an image first.");
+      return;
+    }
+    clearUploadError();
+    setBusy(true);
+    syncModelInfo(); // overlay shows the model that is about to run
+
+    const form = new FormData();
+    form.append("file", selectedFile); // identity comes from the JWT, not the payload
+    form.append("model_choice", modelSelect.value); // "yolov8" | "mobilenetv3"
+
+    try {
+      const res = await apiFetch(`${API_BASE}/analyze`, { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          typeof data.detail === "string" ? data.detail : `Server error (${res.status})`
+        );
+      }
+      renderResult(data);
+      await loadHistory(); // refresh the chart with the new point
+    } catch (err) {
+      const offline = err instanceof TypeError || /Failed to fetch/i.test(err.message);
+      showUploadError(
+        offline
+          ? `Cannot reach the API at ${API_BASE || location.origin}. Is the backend running?`
+          : `Analysis failed: ${err.message}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  analyzeBtn.addEventListener("click", analyze);
+
+  // ---- GET /history + Chart.js line chart ------------------------------------
+  async function loadHistory() {
+    clearChartError();
+    try {
+      const res = await apiFetch(`${API_BASE}/history?limit=200`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      renderChart(rows);
+    } catch (err) {
+      if (err.message !== "unauthorized") {
+        showChartError(`Could not load history: ${err.message}`);
+      }
+    }
+  }
+
+  function renderChart(rows) {
+    const empty = $("chartEmpty");
+    const wrap = $("chartWrap");
+    if (!rows || rows.length === 0) {
+      empty.classList.remove("hidden");
+      wrap.classList.add("hidden");
+      if (historyChart) { historyChart.destroy(); historyChart = null; }
+      return;
+    }
+    empty.classList.add("hidden");
+    wrap.classList.remove("hidden");
+
+    const labels = rows.map((r) =>
+      new Date(r.timestamp).toLocaleString(undefined, {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      })
+    );
+    const values = rows.map((r) => r.bristol_type);
+
+    if (historyChart) historyChart.destroy();
+    historyChart = new Chart($("historyChart"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Bristol type",
+          data: values,
+          borderColor: "#059669",
+          backgroundColor: "rgba(5, 150, 105, .12)",
+          borderWidth: 2,
+          tension: 0.3,
+          fill: true,
+          pointRadius: 4,
+          pointBackgroundColor: (ctx) =>
+            BRISTOL_COLORS[ctx.raw] || "#059669",
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            min: 1, max: 7,
+            ticks: { stepSize: 1, color: "#64748b", callback: (v) => `Type ${v}` },
+            grid: { color: "#f1f5f9" },
+            title: { display: true, text: "Bristol Stool Type", color: "#475569" },
+          },
+          x: {
+            ticks: { color: "#64748b", maxRotation: 45, autoSkip: true, maxTicksLimit: 8 },
+            grid: { color: "#f8fafc" },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: { label: (ctx) => ` Bristol Type ${ctx.parsed.y}` },
+          },
+        },
+      },
+    });
+  }
+
+  // ---- Model comparison bar chart (Chart.js, PLACEHOLDER data) ----------------
+  // TODO(phase 6): replace with real numbers from the backend once MobileNetV3
+  // training lands (e.g. extend GET /evaluation with mobilenet metrics).
+  const MODEL_COMPARE_PLACEHOLDER = {
+    labels: ["Top-1 Accuracy (%)", "Inference Time (ms)"],
+    datasets: [
+      {
+        label: "YOLOv8 (Robust)",
+        data: [87.4, 46],
+        backgroundColor: "#059669",
+        hoverBackgroundColor: "#047857",
+        borderRadius: 6,
+        maxBarThickness: 64,
+      },
+      {
+        label: "MobileNetV3 (Lightweight)",
+        data: [81.2, 12],
+        backgroundColor: "#0ea5e9",
+        hoverBackgroundColor: "#0284c7",
+        borderRadius: 6,
+        maxBarThickness: 64,
+      },
+    ],
+  };
+
+  function renderModelCompareChart() {
+    const canvas = $("modelCompareChart");
+    if (!canvas || typeof Chart === "undefined") return;
+    if (modelCompareChart) modelCompareChart.destroy();
+    modelCompareChart = new Chart(canvas, {
+      type: "bar",
+      data: MODEL_COMPARE_PLACEHOLDER,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: "bottom",
+            labels: { color: "#475569", usePointStyle: true, padding: 16 },
+          },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` ${ctx.dataset.label}: ${ctx.parsed.y}`,
+            },
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { color: "#64748b" },
+            grid: { color: "#f1f5f9" },
+            title: { display: true, text: "Metric value (accuracy % / time ms)", color: "#475569" },
+          },
+          x: {
+            ticks: { color: "#475569", font: { weight: "600" } },
+            grid: { display: false },
+          },
+        },
+      },
+    });
+  }
+
+  // ---- GET /evaluation (Model Evaluation section) -----------------------------
+  async function loadEvaluation() {
+    try {
+      const res = await fetch(`${API_BASE}/evaluation`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.available) {
+        $("evalEmpty").classList.remove("hidden");
+        $("evalBadge").textContent = "not trained";
+        return;
+      }
+      $("evalBadge").textContent = "trained";
+      $("evalBadge").className =
+        "rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700";
+      const pct = (v) => (v == null ? "—" : (v * 100).toFixed(1) + "%");
+      $("evalTop1").textContent = pct(data.top1);
+      $("evalTop5").textContent = pct(data.top5);
+      $("evalEpochs").textContent = data.epochs ?? "—";
+      $("evalLoss").textContent =
+        data.val_loss == null ? "—" : data.val_loss.toFixed(3);
+      $("evalMeta").textContent =
+        `${data.model} · run "${data.run}" · best epoch ${data.best_epoch} of ${data.epochs}` +
+        (data.final_top1 != null
+          ? ` (final epoch: ${(data.final_top1 * 100).toFixed(1)}%)`
+          : "");
+      $("evalMeta").classList.remove("hidden");
+      $("evalStats").classList.remove("hidden");
+    } catch (err) {
+      $("evalError").textContent = `Could not load evaluation: ${err.message}`;
+      $("evalError").classList.remove("hidden");
+    }
+  }
+
+  refreshBtn.addEventListener("click", loadHistory);
+
+  // ---- Auth UI: gate the app behind login/register ----------------------------
+  let authMode = "login";
+
+  function showAuthError(msg) {
+    $("authError").textContent = msg;
+    $("authError").classList.remove("hidden");
+  }
+  function clearAuthError() {
+    $("authError").classList.add("hidden");
+    $("authError").textContent = "";
+  }
+  function setAuthBusy(busy) {
+    $("authSubmit").disabled = busy;
+    $("authSpinner").classList.toggle("hidden", !busy);
+    $("authSubmitLabel").textContent = busy
+      ? "Please wait…"
+      : authMode === "login" ? "Log in" : "Create account";
+  }
+  function showAuth(message) {
+    $("appContent").classList.add("hidden");
+    $("userBar").classList.add("hidden");
+    $("authSection").classList.remove("hidden");
+    if (message) showAuthError(message);
+    else clearAuthError();
+  }
+  function logout(message) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USERNAME_KEY);
+    if (historyChart) { historyChart.destroy(); historyChart = null; }
+    if (modelCompareChart) { modelCompareChart.destroy(); modelCompareChart = null; }
+    $("resultCard").classList.add("hidden");
+    showAuth(message);
+  }
+
+  function showApp(username) {
+    $("authSection").classList.add("hidden");
+    $("appContent").classList.remove("hidden");
+    $("userBar").classList.remove("hidden");
+    $("userBarName").textContent = username;
+    syncModelInfo();
+    loadHistory();
+    loadEvaluation();
+    renderModelCompareChart(); // draw once the container is visible
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    const isLogin = mode === "login";
+    $("tabLogin").className = isLogin
+      ? "rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow"
+      : "rounded-md py-2 text-sm font-medium text-slate-500";
+    $("tabRegister").className = isLogin
+      ? "rounded-md py-2 text-sm font-medium text-slate-500"
+      : "rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow";
+    $("authSubmitLabel").textContent = isLogin ? "Log in" : "Create account";
+    $("usernameField").classList.toggle("hidden", isLogin); // display name: register only
+    $("authHint").textContent = isLogin
+      ? ""
+      : "Log in with your email; the username is your display name. At least 6 characters.";
+    $("authPassword").autocomplete = isLogin ? "current-password" : "new-password";
+    clearAuthError();
+  }
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    clearAuthError();
+    const email = $("authEmail").value.trim().toLowerCase();
+    const username = $("authUsername").value.trim();
+    const password = $("authPassword").value;
+    if (!email || !password || (authMode === "register" && !username)) {
+      showAuthError(
+        authMode === "register"
+          ? "Enter an email, a display username and a password."
+          : "Enter your email and password."
+      );
+      return;
+    }
+    if (!email.includes("@")) {
+      showAuthError("Please enter a valid email address.");
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      const endpoint = authMode === "login" ? "login" : "register";
+      const payload =
+        authMode === "login" ? { email, password } : { email, username, password };
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAuthError(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Authentication failed. Please try again."
+        );
+        return;
+      }
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      localStorage.setItem(USERNAME_KEY, data.user.username);
+      $("authPassword").value = "";
+      showApp(data.user.username);
+    } catch (err) {
+      showAuthError(
+        `Cannot reach the API at ${API_BASE || location.origin}. Is the backend running?`
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  $("authForm").addEventListener("submit", submitAuth);
+  $("tabLogin").addEventListener("click", () => setAuthMode("login"));
+  $("tabRegister").addEventListener("click", () => setAuthMode("register"));
+  $("logoutBtn").addEventListener("click", () => logout("You have been logged out."));
+
+  // ---- Init: restore session or show the auth gate ---------------------------
+  const savedToken = getToken();
+  const savedUser = localStorage.getItem(USERNAME_KEY);
+  if (savedToken && savedUser) {
+    showApp(savedUser); // a 401 from /history auto-logs-out via apiFetch
+  } else {
+    showAuth();
+  }
+  </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+

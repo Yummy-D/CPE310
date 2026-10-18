@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StoolCheck AI — Bristol Stool Scale Analyzer</title>
+  <!-- TailwindCSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    #dropZone.drag-over { border-color: #10b981; background: rgba(16,185,129,.08); }
+    code { font-family: ui-monospace, Consolas, monospace; }
+  </style>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100 text-slate-800">
+
+  <!-- ===== Header ===== -->
+  <header class="sticky top-0 z-10 border-b border-slate-200 bg-white/85 backdrop-blur">
+    <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4">
+      <div class="flex items-center gap-3">
+        <div class="grid h-10 w-10 place-items-center rounded-xl bg-emerald-500 text-xl font-bold text-white">S</div>
+        <div>
+          <h1 class="text-lg font-bold leading-tight text-slate-900">StoolCheck AI</h1>
+          <p class="text-xs text-slate-500">Bristol Stool Scale analysis (Type 1–7)</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span class="hidden items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 sm:inline-flex">
+          🔒 Images deleted immediately after analysis
+        </span>
+        <div id="userBar" class="hidden items-center gap-2">
+          <span id="userBarName" class="text-sm font-medium text-slate-700"></span>
+          <button id="logoutBtn" type="button"
+                  class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100">
+            Log out
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== Auth gate (Phase 5): shown until the user logs in ===== -->
+  <section id="authSection" class="mx-auto max-w-md px-4 py-12">
+    <div class="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <div class="mb-6 text-center">
+        <div class="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-emerald-500 text-xl font-bold text-white">S</div>
+        <h2 class="mt-3 text-lg font-bold text-slate-900">StoolCheck AI</h2>
+        <p class="text-sm text-slate-500">Private Bristol Stool Scale tracking</p>
+      </div>
+
+      <div class="mb-6 grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1">
+        <button id="tabLogin" type="button"
+                class="rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow">Log in</button>
+        <button id="tabRegister" type="button"
+                class="rounded-md py-2 text-sm font-medium text-slate-500">Register</button>
+      </div>
+
+      <form id="authForm">
+        <label for="authEmail" class="mb-1 block text-sm font-medium text-slate-700">Email</label>
+        <input id="authEmail" type="email" autocomplete="email" maxlength="255"
+               placeholder="you@example.com"
+               class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+
+        <div id="usernameField" class="hidden">
+          <label for="authUsername" class="mb-1 block text-sm font-medium text-slate-700">Display username</label>
+          <input id="authUsername" type="text" autocomplete="username" maxlength="32"
+                 placeholder="e.g. sam123"
+                 class="mb-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+
+        <label for="authPassword" class="mb-1 block text-sm font-medium text-slate-700">Password</label>
+        <input id="authPassword" type="password" autocomplete="current-password" maxlength="128"
+               placeholder="••••••••"
+               class="mb-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <p id="authHint" class="mb-4 text-xs text-slate-400"></p>
+
+        <div id="authError" class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+        <button id="authSubmit" type="submit"
+                class="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <span id="authSubmitLabel">Log in</span>
+          <span id="authSpinner" class="hidden h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+        </button>
+      </form>
+    </div>
+  </section>
+
+  <!-- ===== App content (hidden until logged in) ===== -->
+  <div id="appContent" class="hidden">
+  <main class="mx-auto grid max-w-6xl gap-6 px-4 py-8 lg:grid-cols-2">
+
+    <!-- ===== Left column: upload + result ===== -->
+    <section class="space-y-6">
+
+      <!-- Upload card -->
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 class="font-semibold text-slate-900">1 · Upload stool image</h2>
+        <p class="mb-4 mt-1 text-sm text-slate-500">
+          JPG, PNG, WEBP, BMP or GIF — max 10&nbsp;MB. The image is processed and permanently deleted right away.
+        </p>
+
+        <div id="dropZone"
+             class="relative flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 p-6 text-center transition hover:border-emerald-400 hover:bg-emerald-50/40">
+          <img id="preview" alt="Selected preview" class="hidden max-h-40 rounded-lg object-contain" />
+          <div id="dropHint">
+            <div class="text-3xl">📸</div>
+            <p class="text-sm font-medium text-slate-700">Click or drag &amp; drop an image</p>
+            <p id="fileMeta" class="text-xs text-slate-400">No file selected</p>
+          </div>
+          <input id="fileInput" type="file"
+                 accept="image/jpeg,image/png,image/webp,image/bmp,image/gif"
+                 class="absolute inset-0 cursor-pointer opacity-0" aria-label="Choose stool image" />
+        </div>
+
+        <div id="uploadError"
+             class="mt-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+        <button id="analyzeBtn" disabled
+                class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3 font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300">
+          <span id="analyzeLabel">Analyze image</span>
+          <span id="analyzeSpinner"
+                class="hidden h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"></span>
+        </button>
+      </div>
+
+      <!-- Result card (hidden until analysis completes) -->
+      <div id="resultCard" class="hidden rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Classification result</p>
+            <h3 id="resultLabel" class="mt-1 text-lg font-bold text-slate-900">—</h3>
+          </div>
+          <div id="resultBadge"
+               class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl font-bold text-white">?</div>
+        </div>
+
+        <p id="resultDesc" class="mt-3 text-sm text-slate-600"></p>
+
+        <div class="mt-3 flex flex-wrap items-center gap-2 text-xs">
+          <span id="resultConfidence" class="rounded-full bg-slate-100 px-2 py-1 font-medium text-slate-600"></span>
+          <span id="resultModel" class="rounded-full bg-sky-50 px-2 py-1 font-medium text-sky-700"></span>
+          <span class="rounded-full bg-emerald-50 px-2 py-1 font-medium text-emerald-700">✓ Image deleted</span>
+        </div>
+
+        <div class="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-800">🥗 Dietary recommendations</p>
+          <p id="resultAdvice" class="text-sm leading-relaxed text-amber-900"></p>
+        </div>
+
+        <p class="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-400">Bristol scale</p>
+        <div id="scaleStrip" class="mt-2 grid grid-cols-7 gap-1 text-center"></div>
+
+        <p id="resultSaved" class="mt-4 text-xs text-slate-400"></p>
+      </div>
+    </section>
+
+    <!-- ===== Dashboard column ===== -->
+    <section>
+      <div class="h-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-1 flex items-center justify-between">
+          <h2 class="font-semibold text-slate-900">2 · History dashboard</h2>
+          <button id="refreshBtn" class="text-sm font-medium text-emerald-600 hover:text-emerald-700">↻ Refresh</button>
+        </div>
+        <p class="mb-4 text-sm text-slate-500">
+          Bristol type over time — from <code class="rounded bg-slate-100 px-1 text-xs">GET /history</code>
+        </p>
+
+        <div id="chartError"
+             class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+        <div id="chartEmpty" class="hidden py-16 text-center text-sm text-slate-400">
+          No analyses yet — upload an image to get started.
+        </div>
+        <div id="chartWrap" class="relative h-72">
+          <canvas id="historyChart" aria-label="Bristol type history line chart" role="img"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Model Evaluation (Phase 4) ===== -->
+    <section class="lg:col-span-2">
+      <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="mb-1 flex items-center justify-between">
+          <h2 class="font-semibold text-slate-900">3 · Model Evaluation</h2>
+          <span id="evalBadge"
+                class="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">checking…</span>
+        </div>
+        <p class="mb-4 text-sm text-slate-500">
+          YOLOv8n-cls training metrics from the latest run —
+          <code class="rounded bg-slate-100 px-1 text-xs">GET /evaluation</code>
+        </p>
+
+        <div id="evalError"
+             class="mb-3 hidden rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"></div>
+
+        <div id="evalEmpty"
+             class="hidden rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-400">
+          No training run found — train first with
+          <code class="rounded bg-slate-100 px-1">python train_yolo.py</code>.
+        </div>
+
+        <dl id="evalStats" class="hidden grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div class="rounded-xl bg-emerald-50 p-4 text-center">
+            <dt class="text-xs font-medium uppercase tracking-wide text-emerald-700">Top-1 Accuracy</dt>
+            <dd id="evalTop1" class="mt-1 text-2xl font-bold text-emerald-700">—</dd>
+          </div>
+          <div class="rounded-xl bg-sky-50 p-4 text-center">
+            <dt class="text-xs font-medium uppercase tracking-wide text-sky-700">Top-5 Accuracy</dt>
+            <dd id="evalTop5" class="mt-1 text-2xl font-bold text-sky-700">—</dd>
+          </div>
+          <div class="rounded-xl bg-slate-100 p-4 text-center">
+            <dt class="text-xs font-medium uppercase tracking-wide text-slate-600">Epochs</dt>
+            <dd id="evalEpochs" class="mt-1 text-2xl font-bold text-slate-700">—</dd>
+          </div>
+          <div class="rounded-xl bg-amber-50 p-4 text-center">
+            <dt class="text-xs font-medium uppercase tracking-wide text-amber-700">Val Loss</dt>
+            <dd id="evalLoss" class="mt-1 text-2xl font-bold text-amber-700">—</dd>
+          </div>
+        </dl>
+
+        <p id="evalMeta" class="mt-3 hidden text-xs text-slate-400"></p>
+      </div>
+    </section>
+  </main>
+  </div>
+
+  <footer class="mx-auto max-w-6xl px-4 pb-8 text-center text-xs text-slate-400">
+    StoolCheck AI is an educational tool, not a medical device. Always consult a healthcare professional
+    for medical concerns. &nbsp;·&nbsp; No images are ever stored.
+  </footer>
+
+  <script>
+  "use strict";
+
+  // ---- Config ------------------------------------------------------------
+  // Same-origin when served by FastAPI; explicit origin when opened via file://
+  const API_BASE =
+    location.protocol === "file:" ? "http://127.0.0.1:8000" : "";
+
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/bmp", "image/gif"];
+  const MAX_BYTES = 10 * 1024 * 1024; // mirror backend limit
+
+  const BRISTOL_COLORS = {
+    1: "#dc2626", 2: "#ea580c", 3: "#65a30d", 4: "#059669",
+    5: "#ca8a04", 6: "#d97706", 7: "#7c3aed",
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---- Element refs ------------------------------------------------------
+  const fileInput = $("fileInput");
+  const dropZone = $("dropZone");
+  const preview = $("preview");
+  const fileMeta = $("fileMeta");
+  const uploadError = $("uploadError");
+  const analyzeBtn = $("analyzeBtn");
+  const analyzeLabel = $("analyzeLabel");
+  const analyzeSpinner = $("analyzeSpinner");
+  const refreshBtn = $("refreshBtn");
+
+  let selectedFile = null;
+  let historyChart = null;
+
+  // ---- Helpers -----------------------------------------------------------
+  function showUploadError(msg) {
+    uploadError.textContent = msg;
+    uploadError.classList.remove("hidden");
+  }
+  function clearUploadError() {
+    uploadError.classList.add("hidden");
+    uploadError.textContent = "";
+  }
+  function showChartError(msg) {
+    $("chartError").textContent = msg;
+    $("chartError").classList.remove("hidden");
+  }
+  function clearChartError() {
+    $("chartError").classList.add("hidden");
+    $("chartError").textContent = "";
+  }
+  // ---- Auth (Phase 5): JWT in localStorage, attached to protected fetches ----
+  const TOKEN_KEY = "stoolcheck_token";
+  const USERNAME_KEY = "stoolcheck_username";
+
+  function getToken() {
+    return localStorage.getItem(TOKEN_KEY);
+  }
+  function authHeaders(extra = {}) {
+    const t = getToken();
+    return { ...(t ? { Authorization: `Bearer ${t}` } : {}), ...extra };
+  }
+  async function apiFetch(url, options = {}) {
+    const res = await fetch(url, {
+      ...options,
+      headers: authHeaders(options.headers || {}),
+    });
+    if (res.status === 401) {
+      logout("Your session has expired. Please log in again.");
+      throw new Error("unauthorized");
+    }
+    return res;
+  }
+  function setBusy(busy) {
+    analyzeBtn.disabled = busy || !selectedFile;
+    analyzeSpinner.classList.toggle("hidden", !busy);
+    analyzeLabel.textContent = busy ? "Analyzing…" : "Analyze image";
+  }
+
+  // ---- File selection (click or drag & drop) -----------------------------
+  function acceptFile(file) {
+    clearUploadError();
+    if (!file) return;
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      showUploadError("Unsupported file type. Use JPG, PNG, WEBP, BMP or GIF.");
+      return;
+    }
+    if (file.size > MAX_BYTES) {
+      showUploadError("Image exceeds the 10 MB limit.");
+      return;
+    }
+    selectedFile = file;
+    fileMeta.textContent = `${file.name} · ${(file.size / 1024).toFixed(0)} KB`;
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove("hidden");
+    analyzeBtn.disabled = false;
+  }
+
+  fileInput.addEventListener("change", (e) => acceptFile(e.target.files[0]));
+
+  ["dragenter", "dragover"].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.classList.add("drag-over");
+    })
+  );
+  ["dragleave", "drop"].forEach((ev) =>
+    dropZone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("drag-over");
+    })
+  );
+  dropZone.addEventListener("drop", (e) => {
+    if (e.dataTransfer && e.dataTransfer.files.length) acceptFile(e.dataTransfer.files[0]);
+  });
+
+  // ---- Result rendering ----------------------------------------------------
+  function renderResult(data) {
+    const color = BRISTOL_COLORS[data.bristol_type] || "#059669";
+
+    const badge = $("resultBadge");
+    badge.textContent = data.bristol_type;
+    badge.style.backgroundColor = color;
+
+    $("resultLabel").textContent = data.label;
+    $("resultDesc").textContent = data.description;
+    $("resultConfidence").textContent = `Confidence ${(data.confidence * 100).toFixed(0)}%`;
+    $("resultModel").textContent = `model: ${data.model}`;
+    $("resultAdvice").textContent = data.recommendations;
+    $("resultSaved").textContent =
+      `Saved #${data.id} for "${data.username ?? localStorage.getItem(USERNAME_KEY) ?? "you"}" at ${new Date(data.timestamp).toLocaleString()}`;
+
+    // 7-type scale strip with the detected type highlighted
+    const strip = $("scaleStrip");
+    strip.innerHTML = "";
+    for (let t = 1; t <= 7; t++) {
+      const active = t === data.bristol_type;
+      const cell = document.createElement("div");
+      cell.className =
+        "rounded-md py-2 text-xs font-semibold transition " +
+        (active ? "text-white shadow" : "bg-slate-100 text-slate-400");
+      if (active) cell.style.backgroundColor = BRISTOL_COLORS[t];
+      cell.textContent = t;
+      cell.title = `Type ${t}`;
+      strip.appendChild(cell);
+    }
+
+    $("resultCard").classList.remove("hidden");
+    $("resultCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+  // ---- POST /analyze --------------------------------------------------------
+  async function analyze() {
+    if (!selectedFile) {
+      showUploadError("Please choose an image first.");
+      return;
+    }
+    clearUploadError();
+    setBusy(true);
+
+    const form = new FormData();
+    form.append("file", selectedFile); // identity comes from the JWT, not the payload
+
+    try {
+      const res = await apiFetch(`${API_BASE}/analyze`, { method: "POST", body: form });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.detail || `Server error (${res.status})`);
+      }
+      renderResult(data);
+      await loadHistory(); // refresh the chart with the new point
+    } catch (err) {
+      const offline = err instanceof TypeError || /Failed to fetch/i.test(err.message);
+      showUploadError(
+        offline
+          ? `Cannot reach the API at ${API_BASE || location.origin}. Is the backend running?`
+          : `Analysis failed: ${err.message}`
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  analyzeBtn.addEventListener("click", analyze);
+
+  // ---- GET /history + Chart.js line chart ------------------------------------
+  async function loadHistory() {
+    clearChartError();
+    try {
+      const res = await apiFetch(`${API_BASE}/history?limit=200`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const rows = await res.json();
+      renderChart(rows);
+    } catch (err) {
+      if (err.message === "unauthorized") return; // apiFetch already logged us out
+      $("chartWrap").classList.add("hidden");
+      $("chartEmpty").classList.add("hidden");
+      showChartError(`Could not load history: ${err.message}`);
+    }
+  }
+
+  function renderChart(rows) {
+    const empty = $("chartEmpty");
+    const wrap = $("chartWrap");
+
+    if (!rows.length) {
+      if (historyChart) { historyChart.destroy(); historyChart = null; }
+      wrap.classList.add("hidden");
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+    wrap.classList.remove("hidden");
+
+    const labels = rows.map((r) => {
+      const d = new Date(r.timestamp);
+      return isNaN(d) ? r.timestamp : d.toLocaleString();
+    });
+    const points = rows.map((r) => r.bristol_type);
+    const colors = rows.map((r) => BRISTOL_COLORS[r.bristol_type] || "#059669");
+
+    if (historyChart) historyChart.destroy();
+    historyChart = new Chart($("historyChart").getContext("2d"), {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label: "Bristol Type",
+          data: points,
+          borderColor: "#059669",
+          backgroundColor: "rgba(5, 150, 105, 0.12)",
+          pointBackgroundColor: colors,
+          pointBorderColor: colors,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          borderWidth: 2,
+          tension: 0.3,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          y: {
+            min: 1, max: 7,
+            ticks: { stepSize: 1, color: "#64748b", callback: (v) => `Type ${v}` },
+            grid: { color: "#f1f5f9" },
+            title: { display: true, text: "Bristol Stool Type", color: "#475569" },
+          },
+          x: {
+            ticks: { color: "#64748b", maxRotation: 45, autoSkip: true, maxTicksLimit: 8 },
+            grid: { color: "#f8fafc" },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ` Bristol Type ${ctx.parsed.y}`,
+            },
+          },
+        },
+      },
+    });
+  }
+
+  // ---- GET /evaluation (Phase 4: Model Evaluation section) ----
+  async function loadEvaluation() {
+    try {
+      const res = await fetch(`${API_BASE}/evaluation`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data.available) {
+        $("evalEmpty").classList.remove("hidden");
+        $("evalBadge").textContent = "not trained";
+        return;
+      }
+      $("evalBadge").textContent = "trained";
+      $("evalBadge").className =
+        "rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700";
+      const pct = (v) => (v == null ? "—" : (v * 100).toFixed(1) + "%");
+      $("evalTop1").textContent = pct(data.top1);
+      $("evalTop5").textContent = pct(data.top5);
+      $("evalEpochs").textContent = data.epochs ?? "—";
+      $("evalLoss").textContent =
+        data.val_loss == null ? "—" : data.val_loss.toFixed(3);
+      $("evalMeta").textContent =
+        `${data.model} · run "${data.run}" · best epoch ${data.best_epoch} of ${data.epochs}` +
+        (data.final_top1 != null
+          ? ` (final epoch: ${(data.final_top1 * 100).toFixed(1)}%)`
+          : "");
+      $("evalMeta").classList.remove("hidden");
+      $("evalStats").classList.remove("hidden");
+    } catch (err) {
+      $("evalError").textContent = `Could not load evaluation: ${err.message}`;
+      $("evalError").classList.remove("hidden");
+    }
+  }
+
+  refreshBtn.addEventListener("click", loadHistory);
+
+  // ---- Auth UI: gate the app behind login/register (Phase 5) ----------------
+  let authMode = "login";
+
+  function showAuthError(msg) {
+    $("authError").textContent = msg;
+    $("authError").classList.remove("hidden");
+  }
+  function clearAuthError() {
+    $("authError").classList.add("hidden");
+    $("authError").textContent = "";
+  }
+  function setAuthBusy(busy) {
+    $("authSubmit").disabled = busy;
+    $("authSpinner").classList.toggle("hidden", !busy);
+    $("authSubmitLabel").textContent = busy
+      ? "Please wait…"
+      : authMode === "login" ? "Log in" : "Create account";
+  }
+  function showAuth(message) {
+    $("appContent").classList.add("hidden");
+    $("userBar").classList.add("hidden");
+    $("authSection").classList.remove("hidden");
+    if (message) showAuthError(message);
+    else clearAuthError();
+  }
+  function logout(message) {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USERNAME_KEY);
+    if (historyChart) { historyChart.destroy(); historyChart = null; }
+    $("resultCard").classList.add("hidden");
+    showAuth(message);
+  }
+  function showApp(username) {
+    $("authSection").classList.add("hidden");
+    $("appContent").classList.remove("hidden");
+    $("userBar").classList.remove("hidden");
+    $("userBarName").textContent = username;
+    loadHistory();
+    loadEvaluation();
+  }
+  function setAuthMode(mode) {
+    authMode = mode;
+    const isLogin = mode === "login";
+    $("tabLogin").className = isLogin
+      ? "rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow"
+      : "rounded-md py-2 text-sm font-medium text-slate-500";
+    $("tabRegister").className = isLogin
+      ? "rounded-md py-2 text-sm font-medium text-slate-500"
+      : "rounded-md bg-white py-2 text-sm font-semibold text-slate-900 shadow";
+    $("authSubmitLabel").textContent = isLogin ? "Log in" : "Create account";
+    $("usernameField").classList.toggle("hidden", isLogin); // display name: register only
+    $("authHint").textContent = isLogin
+      ? ""
+      : "Log in with your email; the username is your display name. At least 6 characters.";
+    $("authPassword").autocomplete = isLogin ? "current-password" : "new-password";
+    clearAuthError();
+  }
+
+  async function submitAuth(event) {
+    event.preventDefault();
+    clearAuthError();
+    const email = $("authEmail").value.trim().toLowerCase();
+    const username = $("authUsername").value.trim();
+    const password = $("authPassword").value;
+    if (!email || !password || (authMode === "register" && !username)) {
+      showAuthError(
+        authMode === "register"
+          ? "Enter an email, a display username and a password."
+          : "Enter your email and password."
+      );
+      return;
+    }
+    if (!email.includes("@")) {
+      showAuthError("Please enter a valid email address.");
+      return;
+    }
+    setAuthBusy(true);
+    try {
+      const endpoint = authMode === "login" ? "login" : "register";
+      const payload =
+        authMode === "login" ? { email, password } : { email, username, password };
+      const res = await fetch(`${API_BASE}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showAuthError(
+          typeof data.detail === "string"
+            ? data.detail
+            : "Authentication failed. Please try again."
+        );
+        return;
+      }
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      localStorage.setItem(USERNAME_KEY, data.user.username);
+      $("authPassword").value = "";
+      showApp(data.user.username);
+    } catch (err) {
+      showAuthError(
+        `Cannot reach the API at ${API_BASE || location.origin}. Is the backend running?`
+      );
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  $("authForm").addEventListener("submit", submitAuth);
+  $("tabLogin").addEventListener("click", () => setAuthMode("login"));
+  $("tabRegister").addEventListener("click", () => setAuthMode("register"));
+  $("logoutBtn").addEventListener("click", () => logout("You have been logged out."));
+
+  // ---- Init: restore session or show the auth gate ---------------------------
+  const savedToken = getToken();
+  const savedUser = localStorage.getItem(USERNAME_KEY);
+  if (savedToken && savedUser) {
+    showApp(savedUser); // a 401 from /history auto-logs-out via apiFetch
+  } else {
+    showAuth();
+  }
+  </script>
+</body>
+</html>
