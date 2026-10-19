@@ -35,21 +35,22 @@ SQLALCHEMY_DATABASE_URL = env("STOOLCHECK_DATABASE_URL", DEFAULT_MYSQL_URL)
 
 _IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 
-# Connection arguments per database/environment:
+# Connection arguments per database/environment (shared with init_db.py, which
+# calls pymysql.connect() directly and MUST use the same SSL decision):
 #   - SQLite: allow FastAPI's worker threads to share connections.
 #   - MySQL in production (e.g. Aiven cloud): REQUIRES an SSL/TLS connection,
 #     so pass {"ssl": {}} to pymysql or the server rejects the handshake.
 #   - Local MySQL (development): no extra arguments.
 if _IS_SQLITE:
-    _CONNECT_ARGS = {"check_same_thread": False}
+    MYSQL_CONNECT_ARGS = {"check_same_thread": False}
 elif IS_PRODUCTION:  # MySQL + ENVIRONMENT=production (Aiven requires SSL)
-    _CONNECT_ARGS = {"ssl": {}}
+    MYSQL_CONNECT_ARGS = {"ssl": {}}
 else:
-    _CONNECT_ARGS = {}
+    MYSQL_CONNECT_ARGS = {}
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args=_CONNECT_ARGS,
+    connect_args=MYSQL_CONNECT_ARGS,
     pool_pre_ping=True,    # transparently reconnect after dropped cloud links
     pool_recycle=300,      # recycle idle links every 5 min; cloud DBs (Aiven)
                            # terminate idle connections much faster than 1h
