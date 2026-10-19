@@ -42,7 +42,16 @@ from sqlalchemy.orm import Session
 from ai_mock import analyze_stool_image  # noqa: F401  (replaced below by Phase 3)
 from auth import create_access_token, get_current_user, hash_password, verify_password
 from config import IS_PRODUCTION, env, env_bool
-from database import Base, engine, get_db
+from database import (
+    Base,
+    engine,
+    get_db,
+    MYSQL_DB,
+    MYSQL_HOST,
+    MYSQL_PASSWORD,
+    MYSQL_PORT,
+    MYSQL_USER,
+)
 from evaluation import load_evaluation
 from inference import MODEL_CHOICES, analyze_stool_image  # Phase 3/6: YOLOv8 + MobileNetV3 (mock fallbacks)
 from models import Analysis, User
@@ -50,6 +59,22 @@ from models import Analysis, User
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Verify DB connectivity (MySQL/XAMPP) and ensure tables exist."""
+    # Boot banner: everything you need to debug a deployment from Render's logs.
+    # (Printed BEFORE the DB check so it always appears, even when MySQL fails.)
+    print(
+        "[CONFIG] environment="
+        + ("production" if IS_PRODUCTION else "development")
+        + f" | docs={'on' if _ENABLE_DOCS else 'off'}"
+        + " | jwt_secret="
+        + ("set" if (env("SECRET_KEY") or env("STOOLCHECK_SECRET_KEY")) else "MISSING(!)")
+    )
+    print(
+        f"[CONFIG] database={MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB} user={MYSQL_USER} "
+        f"password={'set' if MYSQL_PASSWORD else 'EMPTY'}"
+    )
+    print(f"[CONFIG] cors_origins={_ALLOWED_ORIGINS!r}"
+          + ("  <- EMPTY: browser requests from other origins will be BLOCKED"
+             if not _ALLOWED_ORIGINS else ""))
     try:
         Base.metadata.create_all(bind=engine)
         from sqlalchemy import inspect as _sa_inspect
@@ -85,6 +110,11 @@ def _cors_origins() -> list[str]:
     return ["*"]
 
 
+# Resolved ONCE at import: used by the CORS middleware AND printed in the boot
+# banner, so a misconfigured CORS_ORIGINS is visible immediately in Render logs.
+_ALLOWED_ORIGINS = _cors_origins()
+
+
 # API docs are hidden in production unless ENABLE_DOCS=true (smaller attack
 # surface); they stay available during development.
 _ENABLE_DOCS = env_bool("ENABLE_DOCS", not IS_PRODUCTION)
@@ -103,7 +133,7 @@ app = FastAPI(
 # credentialed requests are not needed; the allowed origins come from CORS_ORIGINS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins(),
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

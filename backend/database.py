@@ -40,13 +40,19 @@ _IS_SQLITE = SQLALCHEMY_DATABASE_URL.startswith("sqlite")
 #   - SQLite: allow FastAPI's worker threads to share connections.
 #   - MySQL in production (e.g. Aiven cloud): REQUIRES an SSL/TLS connection,
 #     so pass {"ssl": {}} to pymysql or the server rejects the handshake.
-#   - Local MySQL (development): no extra arguments.
+#   - Local MySQL (development): no SSL, but keep the timeouts so a stopped
+#     XAMPP fails fast instead of hanging a worker.
 if _IS_SQLITE:
     MYSQL_CONNECT_ARGS = {"check_same_thread": False}
 elif IS_PRODUCTION:  # MySQL + ENVIRONMENT=production (Aiven requires SSL)
-    MYSQL_CONNECT_ARGS = {"ssl": {}}
+    MYSQL_CONNECT_ARGS = {
+        "ssl": {},              # Aiven requires TLS
+        "connect_timeout": 15,  # fail fast on unreachable/misconfigured hosts
+        "read_timeout": 30,     # never hang a gunicorn worker on a dead link
+        "write_timeout": 30,
+    }
 else:
-    MYSQL_CONNECT_ARGS = {}
+    MYSQL_CONNECT_ARGS = {"connect_timeout": 15, "read_timeout": 30, "write_timeout": 30}
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
