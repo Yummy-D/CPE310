@@ -1,0 +1,9 @@
+/* Source stylesheet for the production Tailwind build (Play CDN removed).
+ *
+ * Rebuild styles.css after editing index.html:
+ *   npx tailwindcss@3.4.17 -i frontend/tailwind.input.css -o frontend/styles.css \
+ *       --content frontend/index.html --minify
+ */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

@@ -8,8 +8,10 @@
       content="StoolCheck AI — private Bristol Stool Scale (Type 1–7) image analysis powered by YOLOv8 and MobileNetV3."
     />
     <title>StoolCheck AI — Bristol Stool Scale Analyzer</title>
-    <!-- TailwindCSS via CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- TailwindCSS: production build (Play CDN removed - it warns in prod).
+         Rebuild with: npx tailwindcss@3.4.17 -i frontend/tailwind.input.css
+                       -o frontend/styles.css --content frontend/index.html --minify -->
+    <link rel="stylesheet" href="styles.css" />
     <!-- Chart.js via CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
